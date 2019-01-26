@@ -13,7 +13,7 @@ app.config['UPLOAD_FOLDER'] = '/tmp'
 net = Detector(bytes("cfg/yolov3.cfg", encoding="utf-8"), bytes("weights/yolov3.weights", encoding="utf-8"), 0, bytes("cfg/coco.data",encoding="utf-8"))
 
 
-ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png']
+ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'mp4']
 
 def allowed_file(filename):
     return '.' in filename and \
@@ -47,13 +47,24 @@ def upload_file():
             output_filename = 'out-' + filename
             output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
 
-            res = scan(input_path, output_path)
-            return jsonify({
-                'results': res['results'],
-                'time': res['time'],
-                'input': url_for('uploaded_file', filename=filename),
-                'output': url_for('uploaded_file', filename=output_filename)
-            })
+            if file.filename.endswith('mp4'):
+                # VIDEO
+                res = scan_vid(input_path, output_path)
+                return jsonify({
+                    'results': res['results'],
+                    # 'time': res['time'],
+                    'input': url_for('uploaded_file', filename=filename),
+                    'output': url_for('uploaded_file', filename=output_filename)
+                })
+            else:
+                # PHOTOS
+                res = scan(input_path, output_path)
+                return jsonify({
+                    'results': res['results'],
+                    'time': res['time'],
+                    'input': url_for('uploaded_file', filename=filename),
+                    'output': url_for('uploaded_file', filename=output_filename)
+                })
     return '''
     <!doctype html>
     <title>Analyze new File</title>
@@ -63,6 +74,56 @@ def upload_file():
          <input type=submit value=Upload>
     </form>
     '''
+
+
+def scan_vid(input_path, output_path):
+    vid = cv2.VideoCapture(input_path)
+    outvid = None
+    h, w, l = (None, None, None)
+
+    results_vid = []
+
+    while vid.isOpened():
+        success, im = vid.read()
+        if success:
+            if not outvid:
+                h, w, l = im.shape
+                fourcc = cv2.VideoWriter_fourcc(*'MP4V')
+                outvid = cv2.VideoWriter(output_path, fourcc, 20.0, (w, h))
+                print('videowriter', w, h)
+            
+            # TODO: Parallelize
+            im2 = Image(im)
+            results = net.detect(im2)
+            results_output = []
+
+            for cat, score, bounds in results:
+                    x, y, w, h = bounds
+                    cv2.rectangle(im, (int(x - w / 2), int(y - h / 2)), (int(x + w / 2), int(y + h / 2)), (255, 0, 0), thickness=2)
+                    cv2.putText(im,str(cat.decode("utf-8")),(int(x),int(y)),cv2.FONT_HERSHEY_DUPLEX,4,(0,0,255), thickness=2)
+                    results_output.append({
+                        'cat': cat.decode(),
+                        'score': score,
+                        'bounds': {
+                            'x': bounds[0],
+                            'y': bounds[1],
+                            'w': bounds[2],
+                            'h': bounds[3]
+                        }
+                    })
+            outvid.write(im)
+            print('write')
+
+            results_vid.append(results_output)
+        else:
+            break
+    
+    vid.release()
+    outvid.release()
+
+    return {
+        'results': results_vid
+    }
 
 def scan(input_path, output_path):
     img = cv2.imread(input_path)
