@@ -56,7 +56,7 @@ def upload_file():
     return '''
     <!doctype html>
     <title>Analyze new File</title>
-    <h1>Analyze new File</h1>
+    <h1>Issou X YOLO: Analyze new File</h1>
     <form method=post enctype=multipart/form-data>
       <p><input type=file name=file>
          <input type=submit value=Upload>
