@@ -75,6 +75,31 @@ def upload_file():
     </form>
     '''
 
+from multiprocessing import Pool, cpu_count, current_process
+
+
+def do_img(im):
+    print('do_img', current_process())
+    im2 = Image(im)
+    results = net.detect(im2)
+    results_output = []
+
+    for cat, score, bounds in results:
+            x, y, w, h = bounds
+            cv2.rectangle(im, (int(x - w / 2), int(y - h / 2)), (int(x + w / 2), int(y + h / 2)), (255, 0, 0), thickness=2)
+            cv2.putText(im,str(cat.decode("utf-8")),(int(x),int(y)),cv2.FONT_HERSHEY_DUPLEX,4,(0,0,255), thickness=2)
+            results_output.append({
+                'cat': cat.decode(),
+                'score': score,
+                'bounds': {
+                    'x': bounds[0],
+                    'y': bounds[1],
+                    'w': bounds[2],
+                    'h': bounds[3]
+                }
+            })
+    print('do_img end', current_process())
+    return (im, results_output)
 
 def scan_vid(input_path, output_path):
     vid = cv2.VideoCapture(input_path)
@@ -83,47 +108,34 @@ def scan_vid(input_path, output_path):
 
     results_vid = []
 
+    imgs = []
+    
+
     while vid.isOpened():
         success, im = vid.read()
         if success:
-            if not outvid:
-                h, w, l = im.shape
-                fourcc = cv2.VideoWriter_fourcc(*'MP4V')
-                outvid = cv2.VideoWriter(output_path, fourcc, 20.0, (w, h))
-                print('videowriter', w, h)
-            
-            # TODO: Parallelize
-            im2 = Image(im)
-            results = net.detect(im2)
-            results_output = []
-
-            for cat, score, bounds in results:
-                    x, y, w, h = bounds
-                    cv2.rectangle(im, (int(x - w / 2), int(y - h / 2)), (int(x + w / 2), int(y + h / 2)), (255, 0, 0), thickness=2)
-                    cv2.putText(im,str(cat.decode("utf-8")),(int(x),int(y)),cv2.FONT_HERSHEY_DUPLEX,4,(0,0,255), thickness=2)
-                    results_output.append({
-                        'cat': cat.decode(),
-                        'score': score,
-                        'bounds': {
-                            'x': bounds[0],
-                            'y': bounds[1],
-                            'w': bounds[2],
-                            'h': bounds[3]
-                        }
-                    })
-            outvid.write(im)
-            print('write')
-
-            results_vid.append(results_output)
+            imgs.append(im)
         else:
             break
+    if not outvid:
+        h, w, l = imgs[0].shape
+        fourcc = cv2.VideoWriter_fourcc(*'MP4V')
+        outvid = cv2.VideoWriter(output_path, fourcc, 20.0, (w, h))
+        print('videowriter', w, h)
+        print(len(imgs), 'frames')
+    with Pool(processes=1) as p:
+        imgs_res = p.map(do_img, imgs)
     
-    vid.release()
-    outvid.release()
+        for ires in imgs_res:
+            outvid.write(ires[0])
+            results_vid.append(ires[1])
 
-    return {
-        'results': results_vid
-    }
+        vid.release()
+        outvid.release()
+
+        return {
+            'results': results_vid
+        }
 
 def scan(input_path, output_path):
     img = cv2.imread(input_path)
@@ -138,7 +150,7 @@ def scan(input_path, output_path):
     for cat, score, bounds in results:
             x, y, w, h = bounds
             cv2.rectangle(img, (int(x - w / 2), int(y - h / 2)), (int(x + w / 2), int(y + h / 2)), (255, 0, 0), thickness=2)
-            cv2.putText(img,str(cat.decode("utf-8")),(int(x),int(y)),cv2.FONT_HERSHEY_DUPLEX,4,(0,0,255), thickness=2)
+            cv2.putText(img,str(cat.decode("utf-8")),(int(x),int(y)),cv2.FONT_HERSHEY_DUPLEX,1,(0,0,255), thickness=2)
             results_output.append({
                 'cat': cat.decode(),
                 'score': score,
